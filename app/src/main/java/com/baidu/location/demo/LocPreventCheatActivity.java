@@ -42,8 +42,6 @@ public class LocPreventCheatActivity extends Activity {
         option.setScanSpan(1000);
         option.setOpenGps(true); // 允许开启gps定位
         option.setEnableSimulateGps(false);
-        option.setJudgeMockDisValue(500); // 设置gps虚拟位置点和真实位置点的距离误差，大于这个误差则代表返回的定位结果是mock数据，反之这不是，且仅当返回的定位结果是GPS定位结果
-        option.setNeedRealLocWhenIsMock(true); // 当返回的定位结果是虚拟时，设置是否需要返回真实位置
         option.setCoorType("bd09ll");
         mLocationClient.setLocOption(option);
 
@@ -94,28 +92,48 @@ public class LocPreventCheatActivity extends Activity {
     private String getResultString(BDLocation location) {
         if (location != null) {
             StringBuilder sb = new StringBuilder();
-            sb.append("callback time: ");
+            sb.append("定位时间: ");
+            sb.append(location.getTime());
+            sb.append("\n回调时间: ");
             sb.append(getTimeStr());
-            sb.append("\nerror code : ");
+            sb.append("\n定位结果类型 : ");
             sb.append(location.getLocType());
-            sb.append("\nlatitude : ");
+            sb.append("\n纬度 : ");
             sb.append(location.getLatitude());
-            sb.append("\nlontitude : ");
+            sb.append("\n经度 : ");
             sb.append(location.getLongitude());
-            sb.append("\nradius : ");
+            sb.append("\n精度 : ");
             sb.append(location.getRadius());
 
-            sb.append("\nisMock: ");
-            sb.append(location.isMockGps());
+            sb.append("\n坐标系 : ");
+            sb.append(location.getCoorType());
 
-            if (location.isMockGps() == BDLocation.MOCK_GPS_TYPE_TRUE
-                    && null != location.getReallLocation()) {
-                sb.append("\nrealLocType : ");
-                sb.append(location.getReallLocation().getLocType());
-                sb.append("\nrealLat : ");
-                sb.append(location.getReallLocation().getLatitude());
-                sb.append("\nrealLng : ");
-                sb.append(location.getReallLocation().getLongitude());
+
+            sb.append("\n防作弊策略识别码 : ");
+            sb.append(location.getMockGpsStrategy());
+            sb.append("\n作弊概率 : ");
+            sb.append(location.getMockGpsProbability());
+
+            BDLocation realLoc = location.getReallLocation();
+            if (location.getMockGpsStrategy() > 0 && null != realLoc) {
+
+                sb.append("\n虚假位置和真实位置之间的距离 : ");
+                sb.append(location.getDisToRealLocation());
+                sb.append("\n真实定位结果类型 : ");
+                sb.append(realLoc.getLocType());
+                if (realLoc.getLocType() == BDLocation.TypeNetWorkLocation) {
+                    sb.append("\n网络定位结果类型 : ");
+                    sb.append(realLoc.getNetworkLocationType());
+                    sb.append("\n真实定位精度 : ");
+                    sb.append(realLoc.getRadius());
+                }
+                sb.append("\n真实纬度 : ");
+                sb.append(realLoc.getLatitude());
+                sb.append("\n真实经度 : ");
+                sb.append(realLoc.getLongitude());
+
+                sb.append("\n真实位置坐标系 : ");
+                sb.append(realLoc.getCoorType());
             }
 
             return sb.toString();
