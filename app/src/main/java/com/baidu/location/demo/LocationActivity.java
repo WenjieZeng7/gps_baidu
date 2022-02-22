@@ -11,10 +11,25 @@ import com.baidu.location.service.Utils;
 import android.app.Activity;
 import android.os.Bundle;
 import android.text.method.ScrollingMovementMethod;
+import android.util.Log;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.Button;
 import android.widget.TextView;
+
+import org.eclipse.paho.android.service.MqttAndroidClient;
+import org.eclipse.paho.client.mqttv3.IMqttActionListener;
+import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
+import org.eclipse.paho.client.mqttv3.IMqttToken;
+import org.eclipse.paho.client.mqttv3.MqttCallback;
+import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
+import org.eclipse.paho.client.mqttv3.MqttException;
+import org.eclipse.paho.client.mqttv3.MqttMessage;
+
+import java.math.BigInteger;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 
 /***
@@ -26,6 +41,28 @@ import android.widget.TextView;
  *
  */
 public class LocationActivity extends Activity {
+    //MQTT
+    private final String TAG = "AiotMqtt";
+    /* 设备三元组信息 */
+    final private String PRODUCTKEY = "gmll0B3WENe";
+    final private String DEVICENAME = "test";
+    final private String DEVICESECRET = "81690e1ee1a86b12ca73b42378329ddf";
+
+    /* 自动Topic, 用于上报消息 */
+    final private String PUB_TOPIC = "/" + PRODUCTKEY + "/" + DEVICENAME + "/user/update";
+    /* 自动Topic, 用于接受消息 */
+    final private String SUB_TOPIC = "/" + PRODUCTKEY + "/" + DEVICENAME + "/user/get";
+
+    /* 阿里云Mqtt服务器域名 */
+    final String host = "tcp://" + PRODUCTKEY + ".iot-as-mqtt.cn-shanghai.aliyuncs.com:443";
+    //    final String host = "iot-06z00e2ppeme0ap.mqtt.iothub.aliyuncs.com";
+    private String clientId;
+    private String userName;
+    private String passWord;
+
+    MqttAndroidClient mqttAndroidClient;
+    ///MQTT
+
     private LocationService locationService;
     private TextView LocationResult;
     private TextView LocationDiagnostic;
@@ -41,7 +78,119 @@ public class LocationActivity extends Activity {
         LocationDiagnostic = (TextView) findViewById(R.id.textView2);
         LocationResult.setMovementMethod(ScrollingMovementMethod.getInstance());
         startLocation = (Button) findViewById(R.id.addfence);
+
+        //MQTT
+        /* 获取Mqtt建连信息clientId, username, password */
+        AiotMqttOption aiotMqttOption = new AiotMqttOption().getMqttOption(PRODUCTKEY, DEVICENAME, DEVICESECRET);
+        if (aiotMqttOption == null) {
+            Log.e(TAG, "device info error");
+        } else {
+            clientId = aiotMqttOption.getClientId();
+            userName = aiotMqttOption.getUsername();
+            passWord = aiotMqttOption.getPassword();
+        }
+
+        /* 创建MqttConnectOptions对象并配置username和password */
+        MqttConnectOptions mqttConnectOptions = new MqttConnectOptions();
+        mqttConnectOptions.setUserName(userName);
+        mqttConnectOptions.setPassword(passWord.toCharArray());
+
+
+        /* 创建MqttAndroidClient对象, 并设置回调接口 */
+        mqttAndroidClient = new MqttAndroidClient(getApplicationContext(), host, clientId);
+        mqttAndroidClient.setCallback(new MqttCallback() {
+            @Override
+            public void connectionLost(Throwable cause) {
+                Log.i(TAG, "connection lost");
+            }
+
+            @Override
+            public void messageArrived(String topic, MqttMessage message) throws Exception {
+                Log.i(TAG, "topic: " + topic + ", msg: " + new String(message.getPayload()));
+            }
+
+            @Override
+            public void deliveryComplete(IMqttDeliveryToken token) {
+                Log.i(TAG, "msg delivered");
+            }
+        });
+
+        /* Mqtt建连 */
+        try {
+            mqttAndroidClient.connect(mqttConnectOptions,null, new IMqttActionListener() {
+                @Override
+                public void onSuccess(IMqttToken asyncActionToken) {
+                    Log.i(TAG, "connect succeed");
+
+                    subscribeTopic(SUB_TOPIC);
+                }
+
+                @Override
+                public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
+                    Log.i(TAG, "connect failed");
+                }
+            });
+
+        } catch (MqttException e) {
+            e.printStackTrace();
+        }
+        ///MQTT
     }
+
+
+    /**
+     * 订阅特定的主题
+     * @param topic mqtt主题
+     */
+    public void subscribeTopic(String topic) {
+        try {
+            mqttAndroidClient.subscribe(topic, 0, null, new IMqttActionListener() {
+                @Override
+                public void onSuccess(IMqttToken asyncActionToken) {
+                    Log.i(TAG, "subscribed succeed");
+                }
+
+                @Override
+                public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
+                    Log.i(TAG, "subscribed failed");
+                }
+            });
+
+        } catch (MqttException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 向默认的主题/user/update发布消息
+     * @param payload 消息载荷
+     */
+    public void publishMessage(String payload) {
+        try {
+            if (mqttAndroidClient.isConnected() == false) {
+                mqttAndroidClient.connect();
+            }
+
+            MqttMessage message = new MqttMessage();
+            message.setPayload(payload.getBytes());
+            message.setQos(0);
+            mqttAndroidClient.publish(PUB_TOPIC, message,null, new IMqttActionListener() {
+                @Override
+                public void onSuccess(IMqttToken asyncActionToken) {
+                    Log.i(TAG, "publish succeed!");
+                }
+
+                @Override
+                public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
+                    Log.i(TAG, "publish failed!");
+                }
+            });
+        } catch (MqttException e) {
+            Log.e(TAG, e.toString());
+            e.printStackTrace();
+        }
+    }
+
 
     /**
      * 显示请求字符串
@@ -79,8 +228,8 @@ public class LocationActivity extends Activity {
     @Override
     protected void onStop() {
         // TODO Auto-generated method stub
-        locationService.unregisterListener(mListener); //注销掉监听
-        locationService.stop(); //停止定位服务
+//        locationService.unregisterListener(mListener); //注销掉监听
+//        locationService.stop(); //停止定位服务
         super.onStop();
     }
 
@@ -134,20 +283,27 @@ public class LocationActivity extends Activity {
             if (null != location && location.getLocType() != BDLocation.TypeServerError) {
                 int tag = 1;
                 StringBuffer sb = new StringBuffer(256);
+                StringBuffer sb1 = new StringBuffer();  //用于MQTT上报
                 sb.append("time : ");
+                sb1.append("{\"time\":");
                 /**
                  * 时间也可以使用systemClock.elapsedRealtime()方法 获取的是自从开机以来，每次回调的时间；
                  * location.getTime() 是指服务端出本次结果的时间，如果位置不发生变化，则时间不变
                  */
                 sb.append(location.getTime());
+                sb1.append("\""+location.getTime()+"\",");
                 sb.append("\nlocType : ");// 定位类型
                 sb.append(location.getLocType());
                 sb.append("\nlocType description : ");// *****对应的定位类型说明*****
                 sb.append(location.getLocTypeDescription());
                 sb.append("\nlatitude : ");// 纬度
+                sb1.append("\n\"latitude\": ");// 纬度
                 sb.append(location.getLatitude());
+                sb1.append(location.getLatitude()+",");
                 sb.append("\nlongtitude : ");// 经度
+                sb1.append("\n\"longtitude\": ");// 经度
                 sb.append(location.getLongitude());
+                sb1.append(location.getLongitude()+",}");
                 sb.append("\nradius : ");// 半径
                 sb.append(location.getRadius());
                 sb.append("\nCountryCode : ");// 国家码
@@ -233,6 +389,7 @@ public class LocationActivity extends Activity {
                     sb.append("无法获取有效定位依据导致定位失败，一般是由于手机的原因，处于飞行模式下一般会造成这种结果，可以试着重启手机");
                 }
                 logMsg(sb.toString(), tag);
+                publishMessage(sb1.toString());
             }
         }
 
@@ -292,4 +449,56 @@ public class LocationActivity extends Activity {
             logMsg(sb.toString(), tag);
         }
     };
+
+    /**
+     * MQTT建连选项类，输入设备三元组productKey, deviceName和deviceSecret, 生成Mqtt建连参数clientId，username和password.
+     */
+    class AiotMqttOption {
+        private String username = "";
+        private String password = "";
+        private String clientId = "";
+
+        public String getUsername() { return this.username;}
+        public String getPassword() { return this.password;}
+        public String getClientId() { return this.clientId;}
+
+        /**
+         * 获取Mqtt建连选项对象
+         * @param productKey 产品秘钥
+         * @param deviceName 设备名称
+         * @param deviceSecret 设备机密
+         * @return AiotMqttOption对象或者NULL
+         */
+        public AiotMqttOption getMqttOption(String productKey, String deviceName, String deviceSecret) {
+            if (productKey == null || deviceName == null || deviceSecret == null) {
+                return null;
+            }
+
+            try {
+                String timestamp = Long.toString(System.currentTimeMillis());
+
+                // clientId
+                this.clientId = productKey + "." + deviceName + "|timestamp=" + timestamp +
+                        ",_v=paho-android-1.0.0,securemode=2,signmethod=hmacsha256|";
+
+                // userName
+                this.username = deviceName + "&" + productKey;
+
+                // password
+                String macSrc = "clientId" + productKey + "." + deviceName + "deviceName" +
+                        deviceName + "productKey" + productKey + "timestamp" + timestamp;
+                String algorithm = "HmacSHA256";
+                Mac mac = Mac.getInstance(algorithm);
+                SecretKeySpec secretKeySpec = new SecretKeySpec(deviceSecret.getBytes(), algorithm);
+                mac.init(secretKeySpec);
+                byte[] macRes = mac.doFinal(macSrc.getBytes());
+                password = String.format("%064x", new BigInteger(1, macRes));
+            } catch (Exception e) {
+                e.printStackTrace();
+                return null;
+            }
+
+            return this;
+        }
+    }
 }

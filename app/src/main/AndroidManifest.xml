@@ -43,15 +43,21 @@
         android:label="@string/app_name"
         android:theme="@android:style/Theme.Black">
 
+
         <!-- 声明service组件 -->
         <service
             android:name="com.baidu.location.f"
             android:enabled="true"
             android:process=":remote"/>
+
+        <!-- Mqtt Service -->
+        <service android:name="org.eclipse.paho.android.service.MqttService">
+        </service>
+
         <!-- AK鉴权 -->
         <meta-data
             android:name="com.baidu.lbsapi.API_KEY"
-            android:value="请输入百度开放平台申请的Android端API KEY" /> <!-- http://lbsyun.baidu.com/apiconsole/key -->
+            android:value="V2KxKfOR0XA0dWguvgIPEqFAE0LhZTQC" /> <!-- http://lbsyun.baidu.com/apiconsole/key -->
         <activity
             android:name="com.baidu.location.demo.MainActivity"
             android:label="@string/app_name">
